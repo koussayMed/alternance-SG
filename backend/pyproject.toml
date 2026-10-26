@@ -1,0 +1,20 @@
+[project]
+name = "meteo-api"
+requires-python = ">=3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]  # makes the `app` package importable however pytest is started
+markers = ["integration: needs a PostgreSQL database (TEST_DATABASE_URL)"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
