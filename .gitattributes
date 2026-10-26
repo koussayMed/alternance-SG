@@ -1,0 +1,5 @@
+# LF line endings for files used inside Linux containers (a CRLF shell script fails to start)
+*.sh  text eol=lf
+*.tpl text eol=lf
+*.yml text eol=lf
+*.ini text eol=lf
