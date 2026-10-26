@@ -1,0 +1,110 @@
+name: sre-meteo
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-meteo}
+      POSTGRES_USER: ${POSTGRES_USER:-meteo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-55432}:5432" 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    environment:
+      APP_ENV: local
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-meteo}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-meteo}
+      WEATHER_CACHE_TTL_S: ${WEATHER_CACHE_TTL_S:-600}
+      FORECAST_API_URL: ${FORECAST_API_URL:-https://api.open-meteo.com/v1/forecast}
+      METRICS_PUSHGATEWAY_URL: http://pushgateway:9091
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  #  Observability
+  pushgateway:
+    image: prom/pushgateway:v1.11.4
+    ports:
+      - "127.0.0.1:9091:9091" 
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  prometheus:
+    build: ./observability/prometheus
+    environment:
+      PUSHGATEWAY_TARGET: pushgateway:9091
+      PUSHGATEWAY_SCHEME: http
+      CADVISOR_TARGET: cadvisor:8080 
+    volumes:
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090" 
+    depends_on:
+      pushgateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.service 
+      - --enable_metrics=cpu,memory,network
+    privileged: true 
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "127.0.0.1:8081:8080" 
+    restart: unless-stopped
+
+  grafana:
+    build: ./observability/grafana
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:3000:3000" 
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  prometheus-data:
