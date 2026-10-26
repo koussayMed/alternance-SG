@@ -1,0 +1,607 @@
+{
+  "uid": "meteo-conteneurs-azure",
+  "title": "Conteneurs — Azure (Azure Monitor)",
+  "tags": [
+    "meteo",
+    "conteneurs"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Réplicas (frontend, backend)",
+      "id": 29,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "Nombre de réplicas en cours d'exécution : l'autoscaling vu par la plateforme",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Replicas",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Replicas",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Redémarrages de conteneurs",
+      "id": 30,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "Un redémarrage = plantage ou sonde en échec",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RestartCount",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RestartCount",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU (nanocœurs, moyenne par réplica)",
+      "id": 31,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "1 000 000 000 nanocœurs = 1 vCPU. Le backend a 0,5 vCPU par réplica, le frontend 0,25",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "UsageNanoCores",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "UsageNanoCores",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Mémoire (working set, moyenne par réplica)",
+      "id": 32,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "Limites : 1 Go par réplica backend, 0,5 Go par réplica frontend",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "WorkingSetBytes",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "WorkingSetBytes",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Réseau reçu",
+      "id": 33,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RxBytes",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RxBytes",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Réseau envoyé",
+      "id": 34,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-monitor"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-frontend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "TxBytes",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-monitor"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__AZURE_SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__AZURE_SUBSCRIPTION_ID__",
+                "resourceGroup": "rg-sre-meteo",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "meteo-backend",
+                "region": "francecentral"
+              }
+            ],
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "TxBytes",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "region": "francecentral",
+            "dimensionFilters": [],
+            "alias": "{{ resourcename }}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "meteo"
+      ],
+      "asDropdown": false,
+      "title": "Météo des villes",
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

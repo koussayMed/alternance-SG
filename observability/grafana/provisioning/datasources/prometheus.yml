@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: ${PROMETHEUS_URL}
+    isDefault: true
+    editable: false
+    basicAuth: true
+    basicAuthUser: ${PROMETHEUS_USER}
+    secureJsonData:
+      basicAuthPassword: ${PROMETHEUS_PASSWORD}
+    jsonData:
+      timeInterval: 15s
