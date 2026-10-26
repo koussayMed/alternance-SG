@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Météo des villes</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/theme.js"></script>
+</head>
+<body>
+  <!-- Weather icons, reused with <use href="#i-..."> -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-sun" viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/><path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.6 10.6l4.2 4.2M33.2 33.2l4.2 4.2M10.6 37.4l4.2-4.2M33.2 14.8l4.2-4.2"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 48 48"><path d="M31 8a16 16 0 1 0 9 26A14 14 0 0 1 31 8z"/></symbol>
+    <symbol id="i-partly" viewBox="0 0 48 48"><circle cx="18" cy="17" r="7"/><path d="M18 4v4M5 17h4M8.8 7.8l2.8 2.8M27.2 7.8l-2.8 2.8"/><path d="M16 40h20a7 7 0 0 0 0-14 10 10 0 0 0-19 3 5.5 5.5 0 0 0-1 11z"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 48 48"><path d="M13 38h23a8 8 0 0 0 0-16 12 12 0 0 0-23 3 6.5 6.5 0 0 0 0 13z"/></symbol>
+    <symbol id="i-rain" viewBox="0 0 48 48"><path d="M13 30h23a8 8 0 0 0 0-16 12 12 0 0 0-23 3 6.5 6.5 0 0 0 0 13z"/><path d="M17 36l-2 6M25 36l-2 6M33 36l-2 6"/></symbol>
+    <symbol id="i-snow" viewBox="0 0 48 48"><path d="M13 30h23a8 8 0 0 0 0-16 12 12 0 0 0-23 3 6.5 6.5 0 0 0 0 13z"/><path d="M17 37v4M15 39h4M27 37v4M25 39h4"/></symbol>
+    <symbol id="i-storm" viewBox="0 0 48 48"><path d="M13 30h23a8 8 0 0 0 0-16 12 12 0 0 0-23 3 6.5 6.5 0 0 0 0 13z"/><path d="M26 32l-5 7h6l-4 7"/></symbol>
+    <symbol id="i-fog" viewBox="0 0 48 48"><path d="M8 18h32M6 26h36M10 34h28"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 48 48"><path d="M24 43s-13-12.5-13-23a13 13 0 0 1 26 0c0 10.5-13 23-13 23z"/><circle cx="24" cy="20" r="4.5"/></symbol>
+  </svg>
+
+  <header class="top">
+    <h1 class="brand">Météo des villes</h1>
+    <button id="theme-btn" type="button" class="theme-btn" aria-label="Changer de thème">
+      <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-moon"></use></svg>
+    </button>
+  </header>
+
+  <main>
+    <!-- Weather at the visitor's position: the background follows the current sky -->
+    <section id="here" class="sky" data-sky="idle" data-state="idle" aria-live="polite" aria-labelledby="here-title">
+      <div class="sky-head">
+        <svg class="pin" aria-hidden="true"><use href="#i-pin"/></svg>
+        <h2 id="here-title" class="sky-title">Autour de vous</h2>
+      </div>
+
+      <div class="sky-body" data-show="ready">
+        <p class="sky-temp"><span id="here-temp">--</span><span class="unit">°</span></p>
+        <div class="sky-side">
+          <svg class="sky-icon" aria-hidden="true"><use id="here-icon" href="#i-cloud"/></svg>
+          <p id="here-desc" class="sky-desc"></p>
+          <p id="here-wind" class="sky-meta"></p>
+          <p id="here-time" class="sky-meta"></p>
+        </div>
+      </div>
+
+      <div class="sky-prompt" data-show="idle">
+        <p>Affichez la météo de l'endroit où vous êtes. Votre position est arrondie à un kilomètre près et n'est pas conservée.</p>
+        <button id="locate-btn" type="button" class="btn btn-light">Utiliser ma position</button>
+      </div>
+      <p class="sky-message" data-show="loading">Recherche de votre position…</p>
+      <div class="sky-prompt" data-show="error">
+        <p id="here-error"></p>
+        <button id="retry-btn" type="button" class="btn btn-light">Réessayer</button>
+      </div>
+    </section>
+
+    <section class="list" aria-labelledby="list-title">
+      <div class="list-head">
+        <h2 id="list-title">Mes villes <span id="count" class="count"></span></h2>
+        <button id="refresh-btn" type="button" class="btn-text">Actualiser</button>
+      </div>
+
+      <form id="add-form" class="add" autocomplete="off">
+        <label for="city-name" class="visually-hidden">Ajouter une ville</label>
+        <div class="combo">
+          <input id="city-name" name="name" type="text" maxlength="80" placeholder="Ajouter une ville" required
+                 role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggestions"
+                 autocomplete="off" spellcheck="false">
+          <ul id="suggestions" class="suggestions" role="listbox" aria-label="Suggestions de villes" hidden></ul>
+        </div>
+        <button type="submit" class="btn">Ajouter</button>
+      </form>
+      <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+
+      <p id="empty" class="empty" hidden>Ajoutez une ville pour suivre sa météo.</p>
+      <ul id="cities" class="cities"></ul>
+    </section>
+
+    <!-- Hidden by default; add ?tech to the URL to show it (scaling demo) -->
+    <details id="tech" class="tech" hidden>
+      <summary>Infos techniques</summary>
+      <p id="backend-info" class="tech-line">Backend : chargement…</p>
+      <p class="tech-line">Envoie 20 requêtes et compte les réponses par réplica. Après un scale-out, plusieurs réplicas répondent.</p>
+      <button id="probe-btn" type="button" class="btn btn-quiet">Envoyer 20 requêtes</button>
+      <table id="replicas" hidden>
+        <thead><tr><th scope="col">Réplica</th><th scope="col">Révision</th><th scope="col">Réponses</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </details>
+  </main>
+
+  <footer class="foot">
+    Données météo <a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a>, mises en cache 10 minutes.
+  </footer>
+
+  <template id="city-template">
+    <li class="city">
+      <svg class="city-icon" aria-hidden="true"><use href="#i-cloud"/></svg>
+      <div class="city-main">
+        <p class="city-name"><span class="name"></span> <span class="country"></span></p>
+        <p class="city-detail"><span class="desc"></span><span class="wind"></span></p>
+        <p class="city-fresh"><span class="time"></span><span class="badge" hidden></span></p>
+      </div>
+      <div class="scale" aria-hidden="true"><span class="scale-dot"></span></div>
+      <p class="city-temp"></p>
+      <button type="button" class="remove" aria-label="Retirer de ma liste">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </li>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
