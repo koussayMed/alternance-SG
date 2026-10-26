@@ -1,0 +1,82 @@
+# Rendered at startup by the nginx image entrypoint (envsubst replaces ${BACKEND_URL}).
+# Included in the nginx http {} block.
+
+# Keep the incoming X-Request-ID, else generate one ($request_id)
+map $http_x_request_id $req_id {
+    default $http_x_request_id;
+    ""      $request_id;
+}
+
+# Original scheme: behind the Container Apps ingress, nginx receives plain HTTP
+map $http_x_forwarded_proto $fwd_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
+# JSON access logs on stdout, with the same request_id as the backend
+log_format json escape=json
+    '{"timestamp":"$time_iso8601","level":"INFO","service":"frontend",'
+    '"message":"request completed","request_id":"$req_id","method":"$request_method",'
+    '"path":"$uri","status":$status,"duration_s":$request_time,'
+    '"upstream_s":"$upstream_response_time","bytes":$body_bytes_sent,'
+    '"client_ip":"$remote_addr","user_agent":"$http_user_agent"}';
+
+server {
+    listen 8080;
+    server_tokens off;
+    root /usr/share/nginx/html;
+    access_log /dev/stdout json;
+
+    # Security headers, set once for the whole site
+    add_header X-Request-ID $req_id always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'none'" always;
+
+    # Frontend probe: does not depend on the backend
+    location = /healthz {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"ok"}';
+    }
+
+    # API: proxied to the backend, which is not public
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header X-Request-ID $req_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+        proxy_ssl_server_name on;          # SNI when the backend is reached over HTTPS (Container Apps)
+        proxy_hide_header X-Request-ID;    # avoid a duplicate with add_header
+
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 15s;            # longer than the backend's own timeouts
+
+        # Backend down or too slow: clear JSON answer instead of an nginx error page
+        error_page 502 504 = @backend_down;
+    }
+
+    location @backend_down {
+        default_type application/json;
+        add_header X-Request-ID $req_id always;
+        return 503 '{"error":"backend_unavailable","message":"Backend indisponible","request_id":"$req_id"}';
+    }
+
+    location = /favicon.ico {
+        access_log off;
+        return 204;
+    }
+
+    # Revalidate on every load (ETag, 304 if unchanged): no stale JavaScript after a deploy
+    location /static/ {
+        expires -1;
+    }
+
+    location / {
+        expires -1;
+        try_files $uri /index.html;
+    }
+}
