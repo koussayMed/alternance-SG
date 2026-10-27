@@ -1,0 +1,5 @@
+# Accepted vulnerabilities, one per line, ALWAYS with a reason and a review date.
+# Only for a fixable vulnerability that cannot be fixed right away.
+#
+# Example:
+# CVE-2026-00000   # package X, code not used by the app; review on 2026-11-30
