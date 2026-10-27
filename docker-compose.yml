@@ -51,7 +51,7 @@ services:
  
   # --- Observability ----------------------------------------------------------------------------
   pushgateway:
-    image: prom/pushgateway:v1.11.4
+    image: prom/pushgateway:v1.11.5
     ports:
       - "127.0.0.1:9091:9091" # localhost only: inspect pushed metrics
     healthcheck:
