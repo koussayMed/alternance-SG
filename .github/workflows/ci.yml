@@ -38,6 +38,9 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        
       - name: Check CI secrets
         env:
           CI_DB_USER: ${{ secrets.CI_DB_USER }}
@@ -48,8 +51,7 @@ jobs:
             [ -n "${!name}" ] || { echo "::error::missing repository secret $name"; exit 1; }
           done
 
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 
