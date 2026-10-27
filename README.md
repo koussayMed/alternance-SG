@@ -8,7 +8,7 @@ Deployed on Azure Container Apps (public frontend, internal backend) with manage
 
 **Live application:** https://meteo-frontend.bluemeadow-0d1feb28.francecentral.azurecontainerapps.io
 
-![The application](docs/images/app.png)
+
 
 ## How the brief is covered
 
@@ -71,7 +71,7 @@ flowchart LR
     V -->|failure| R[rollback to the<br/>previous images]
 ```
 
-![CI/CD run: tests, build and scan, deployment with smoke tests](docs/images/ci-cd.png)
+![CI/CD run: tests, build and scan, deployment with smoke tests]
 
 - **Triggers**: a pull request runs the CI only; a push to `main` also deploys. This time-boxed solo project
   commits to `main`; in a team, `main` would be protected (pull request + required checks).
@@ -293,9 +293,9 @@ is a larger PostgreSQL tier, then a higher replica maximum.
 **Run of October 27 (Grafana on Azure, during the plateau)**: 0 % 5xx errors, API p95 about 21 ms, backend
 scaled from 1 to 8 replicas and frontend to 5, no container restart.
 
-![Grafana SRE dashboard during the load test](docs/images/grafana-load-test.png)
+![Grafana SRE dashboard during the load test]
 
-![Azure Monitor: replicas, restarts, CPU and memory per app](docs/images/azure-containers.png)
+![Azure Monitor: replicas, restarts, CPU and memory per app]
 
 Requests per replica during the test: [query 7](observability/queries.kql) in **cae-sre-meteo → Logs**.
 
@@ -419,7 +419,7 @@ the weather source of each city.
 | `db-down` | PostgreSQL stopped | page served, "weather at my position" still works (no database), list → 503 in under 3 s, alert `meteo-5xx-utilisateurs` within minutes |
 | `db-up` | PostgreSQL started | automatic recovery, no backend restart (the pool drops dead connections) |
 
-![Weather API down: clean error with a reference, circuit open, no hanging request](docs/images/degraded-mode.png)
+![Weather API down: clean error with a reference, circuit open, no hanging request]
 
 UI error messages show a **reference** (start of the `request_id`): pasted in query 4 of `queries.kql`, it
 finds the full path of the request (nginx, Flask, refused Open-Meteo call). Query 6 shows which mechanisms
