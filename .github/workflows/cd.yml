@@ -1,0 +1,176 @@
+
+name: CD
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  RESOURCE_GROUP: rg-sre-meteo
+  ACR_NAME: acrsremeteokoussay
+  BACKEND_APP: meteo-backend
+  FRONTEND_APP: meteo-frontend
+  TAG: ${{ github.sha }} # image tag = commit: we always know which code is running
+
+jobs:
+  app:
+    name: Deploy the application
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production # the OIDC federated credential only trusts this environment
+      url: ${{ steps.current.outputs.app_url }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Download the tested images
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: images
+
+      - name: Load the images
+        run: gunzip -c images.tar.gz | docker load
+
+      - name: Azure login (OIDC)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push the images to the registry
+        run: |
+          set -eu
+          az acr login --name "$ACR_NAME"
+          registry="$ACR_NAME.azurecr.io"
+          for service in backend frontend; do
+            docker tag "sre-meteo-$service" "$registry/meteo-$service:$TAG"
+            docker push "$registry/meteo-$service:$TAG"
+          done
+          echo "REGISTRY=$registry" >> "$GITHUB_ENV"
+
+      - name: Save the current version (for rollback)
+        id: current
+        run: |
+          set -eu
+          az extension add --name containerapp --upgrade --only-show-errors
+          image() { az containerapp show --only-show-errors -n "$1" -g "$RESOURCE_GROUP" --query "properties.template.containers[0].image" -o tsv; }
+          echo "PREVIOUS_BACKEND_IMAGE=$(image "$BACKEND_APP")" >> "$GITHUB_ENV"
+          echo "PREVIOUS_FRONTEND_IMAGE=$(image "$FRONTEND_APP")" >> "$GITHUB_ENV"
+          fqdn=$(az containerapp show --only-show-errors -n "$FRONTEND_APP" -g "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "app_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          echo "APP_URL=https://$fqdn" >> "$GITHUB_ENV"
+          echo "Currently running: $(image "$BACKEND_APP") / $(image "$FRONTEND_APP")"
+
+      - name: Deploy backend then frontend
+        run: |
+          set -eu
+          # The old revision keeps serving until the new one is ready (single revision mode)
+          wait_ready() {
+            for _ in $(seq 1 36); do
+              latest=$(az containerapp show --only-show-errors -n "$1" -g "$RESOURCE_GROUP" --query properties.latestRevisionName -o tsv)
+              ready=$(az containerapp show --only-show-errors -n "$1" -g "$RESOURCE_GROUP" --query properties.latestReadyRevisionName -o tsv)
+              if [ "$latest" = "$ready" ]; then echo "$1: revision $latest ready"; return 0; fi
+              sleep 10
+            done
+            echo "::error::$1: revision $latest not ready after 6 minutes"
+            return 1
+          }
+          # Backend first: it runs the database migrations
+          az containerapp update --only-show-errors -n "$BACKEND_APP" -g "$RESOURCE_GROUP" --image "$REGISTRY/meteo-backend:$TAG" -o none
+          wait_ready "$BACKEND_APP"
+          az containerapp update --only-show-errors -n "$FRONTEND_APP" -g "$RESOURCE_GROUP" --image "$REGISTRY/meteo-frontend:$TAG" -o none
+          wait_ready "$FRONTEND_APP"
+
+      - name: Smoke tests on the public URL
+        run: |
+          set -eu
+          # Traffic switches a few seconds after the revision is ready
+          for _ in $(seq 1 30); do
+            version=$(curl -fsS "$APP_URL/api/info" | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])" || true)
+            [ "$version" = "$TAG" ] && break
+            sleep 5
+          done
+          [ "$version" = "$TAG" ] || { echo "::error::served version '$version', expected $TAG"; exit 1; }
+          curl -fsS "$APP_URL/healthz"
+          curl -fsS "$APP_URL/" | grep -q "Météo des villes"
+          curl -fsSI "$APP_URL/" | grep -qi "content-security-policy"
+          curl -fsS -H "X-Visitor-Id: 00000000-0000-4000-8000-000000000000" "$APP_URL/api/weather" \
+            | python3 -c "import json,sys; assert isinstance(json.load(sys.stdin), list)"
+          echo "### Deployed \`$TAG\` to $APP_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back to the previous version
+        if: failure() && env.PREVIOUS_BACKEND_IMAGE != ''
+        run: |
+          echo "::warning::Deployment failed: rolling back to $PREVIOUS_BACKEND_IMAGE and $PREVIOUS_FRONTEND_IMAGE"
+          az containerapp update --only-show-errors -n "$BACKEND_APP" -g "$RESOURCE_GROUP" --image "$PREVIOUS_BACKEND_IMAGE" -o none
+          az containerapp update --only-show-errors -n "$FRONTEND_APP" -g "$RESOURCE_GROUP" --image "$PREVIOUS_FRONTEND_IMAGE" -o none
+          echo "### Failed: rolled back to \`$PREVIOUS_BACKEND_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+  observability:
+    name: Deploy Prometheus and Grafana
+    needs: app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: deploy-observability
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # needed to compare with the previous commit on main
+
+      - name: Detect changes in observability/
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT" # first push or unknown history: deploy
+          elif git diff --quiet "$BEFORE" "$GITHUB_SHA" -- observability/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No change in observability/: nothing to deploy"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Azure login (OIDC)
+        if: steps.changes.outputs.changed == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build, push and roll out Prometheus and Grafana
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -eu
+          az extension add --name containerapp --upgrade --only-show-errors
+          # The apps (and their secrets) are created once by infra/observability-setup.ps1
+          for app in meteo-prometheus meteo-grafana; do
+            if ! az containerapp show --only-show-errors -n "$app" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
+              echo "::notice::$app does not exist yet: run infra/observability-setup.ps1 once"
+              exit 0
+            fi
+          done
+          registry="$ACR_NAME.azurecr.io"
+          az acr login --name "$ACR_NAME"
+          # The Azure Monitor dashboard needs the subscription id
+          sed -i "s/__AZURE_SUBSCRIPTION_ID__/$AZURE_SUBSCRIPTION_ID/g" observability/grafana/dashboards/conteneurs-azure.json
+          for component in prometheus grafana; do
+            docker build -t "$registry/meteo-$component:$TAG" "observability/$component"
+            docker push "$registry/meteo-$component:$TAG"
+            # Note: a new Prometheus revision starts with an empty database (no persistent volume)
+            az containerapp update --only-show-errors -n "meteo-$component" -g "$RESOURCE_GROUP" \
+              --image "$registry/meteo-$component:$TAG" -o none
+          done
+          echo "### Observability deployed: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
