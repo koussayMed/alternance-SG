@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import psycopg
-
 from psycopg import errors as pg_errors
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -65,13 +64,13 @@ class PostgresRepository:
     def __init__(
         self, database_url: str, pool_min_size: int = 1, pool_max_size: int = 2, timeout_s: float = 3.0
     ):
-        
+        self._pool = ConnectionPool(
             conninfo=database_url,
             min_size=pool_min_size,
             max_size=pool_max_size,
-            timeout=timeout_s,  
+            timeout=timeout_s,
             kwargs={"row_factory": dict_row, "connect_timeout": int(timeout_s)},
-            check=ConnectionPool.check_connection,  
+            check=ConnectionPool.check_connection,
             name="app-db",
         )
         self._pool.open(wait=False)
@@ -135,7 +134,7 @@ class PostgresRepository:
     def add_city(self, geo: GeoResult, visitor_id: str) -> City:
         """Adds the city to the visitor's list (the place itself is created once, then shared)."""
         try:
-            with self._conn() as conn: 
+            with self._conn() as conn:
                 row = conn.execute(
                     _UPSERT_PLACE, (geo.external_id, geo.name, geo.country, geo.latitude, geo.longitude)
                 ).fetchone()
@@ -184,7 +183,7 @@ class PostgresRepository:
         )
         try:
             with self._conn() as conn:
-                conn.execute(_UPSERT_WEATHER, params) 
+                conn.execute(_UPSERT_WEATHER, params)
         except pg_errors.ForeignKeyViolation:
             log.info("city deleted before cache write", extra={"city_id": city_id})
 
