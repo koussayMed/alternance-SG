@@ -1,5 +1,5 @@
 # Prometheus with its config baked in (rendered at startup from the environment)
-FROM prom/prometheus:v3.15.0
+FROM prom/prometheus:v3.15.1
 
 COPY prometheus.yml.tpl /etc/prometheus/prometheus.yml.tpl
 COPY entrypoint.sh /etc/prometheus/entrypoint.sh
