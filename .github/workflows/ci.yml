@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # never cancel a deployment on main
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.69.3
+
+jobs:
+  tests:
+    name: Lint and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: meteo
+          POSTGRES_USER: ${{ secrets.CI_DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Check CI secrets
+        env:
+          CI_DB_USER: ${{ secrets.CI_DB_USER }}
+          CI_DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          CI_GRAFANA_PASSWORD: ${{ secrets.CI_GRAFANA_PASSWORD }}
+        run: |
+          for name in CI_DB_USER CI_DB_PASSWORD CI_GRAFANA_PASSWORD; do
+            [ -n "${!name}" ] || { echo "::error::missing repository secret $name"; exit 1; }
+          done
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Unit and integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://${{ secrets.CI_DB_USER }}:${{ secrets.CI_DB_PASSWORD }}@localhost:5432/meteo
+        run: pytest -rs # -rs lists skipped tests, so a skipped integration test is visible
+
+  security:
+    name: Misconfigurations and secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Dockerfile misconfigurations (Trivy)
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE"
+          config --severity HIGH,CRITICAL --exit-code 1 /src
+
+      - name: Committed secrets (Trivy)
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" "$TRIVY_IMAGE"
+          fs --scanners secret --exit-code 1 /src
+
+  build-scan-smoke:
+    name: Build, image scan and end-to-end tests
+    needs: [tests, security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APP_VERSION: ${{ github.sha }} # baked into the backend image, checked by the smoke tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Write the CI .env file
+        env:
+          CI_DB_USER: ${{ secrets.CI_DB_USER }}
+          CI_DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          CI_GRAFANA_PASSWORD: ${{ secrets.CI_GRAFANA_PASSWORD }}
+        run: |
+          printf 'POSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\nDB_HOST_PORT=55432\nGRAFANA_ADMIN_PASSWORD=%s\n' \
+            "$CI_DB_USER" "$CI_DB_PASSWORD" "$CI_GRAFANA_PASSWORD" > .env
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Scan images for vulnerabilities (report only)
+        continue-on-error: true
+        run: |
+          for image in sre-meteo-backend sre-meteo-frontend; do
+            echo "::group::Trivy $image"
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD:/src:ro" "$TRIVY_IMAGE" \
+              image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+              --ignorefile /src/.trivyignore --exit-code 0 --no-progress "$image"
+            echo "::endgroup::"
+          done
+
+      - name: Start the full stack
+        run: docker compose up -d --wait --wait-timeout 120
+
+      - name: Smoke tests (nginx -> backend -> database)
+        run: |
+          set -eu
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/ -o index.html && grep -q "Météo des villes" index.html
+          curl -fsSI http://localhost:8080/ -o headers.txt && grep -qi "content-security-policy" headers.txt
+          curl -fsS -H "X-Visitor-Id: 00000000-0000-4000-8000-000000000000" http://localhost:8080/api/weather -o weather.json
+          curl -fsS http://localhost:8080/api/info -o info.json
+          python3 - <<'EOF'
+          import json, os
+          info = json.load(open("info.json"))
+          assert info["version"] == os.environ["APP_VERSION"], f"wrong version: {info['version']}"
+          assert isinstance(json.load(open("weather.json")), list)
+          print("OK: version", info["version"], "served by", info["instance"]["replica"])
+          EOF
+
+      - name: Smoke tests (backend -> Pushgateway -> Prometheus -> Grafana)
+        env:
+          CI_GRAFANA_PASSWORD: ${{ secrets.CI_GRAFANA_PASSWORD }}
+        run: |
+          set -eu
+          query() {
+            curl -fsS http://localhost:9090/api/v1/query --data-urlencode "query=$1" \
+              | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(int(float(r[0]['value'][1])) if r else 0)"
+          }
+          # Backend metrics reach Prometheus within ~30 s (15 s push + 15 s scrape)
+          for _ in $(seq 1 30); do
+            n=$(query 'sum(meteo_http_requests_total)')
+            [ "$n" -gt 0 ] && break
+            sleep 3
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no backend metrics in Prometheus"; exit 1; }
+          echo "Prometheus: $n requests counted"
+          curl -fsS http://localhost:3000/api/health
+          curl -fsS http://localhost:3000/api/dashboards/uid/meteo-sre -o dashboard.json
+          curl -fsS -u "admin:$CI_GRAFANA_PASSWORD" http://localhost:3000/api/datasources/uid/prometheus/health
+          # cAdvisor depends on the Docker host: warning only
+          c=$(query 'count(container_memory_working_set_bytes{container_label_com_docker_compose_service="backend"})')
+          if [ "$c" -gt 0 ]; then echo "cAdvisor: backend container tracked"; else echo "::warning::cAdvisor does not see the backend container"; fi
+
+      - name: Export the tested images for the CD
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-cd]')
+        run: docker save sre-meteo-backend sre-meteo-frontend | gzip -1 > images.tar.gz
+
+      - name: Upload the tested images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-cd]')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: images
+          path: images.tar.gz
+          retention-days: 1
+          compression-level: 0 # already gzipped
+          if-no-files-found: error
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
+  deploy:
+    name: Deploy (CD)
+    needs: build-scan-smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-cd]')
+    permissions:
+      contents: read
+      id-token: write # OIDC token exchanged for short-lived Azure access
+    uses: ./.github/workflows/cd.yml
+    secrets: inherit
