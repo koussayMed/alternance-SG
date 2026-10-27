@@ -1,0 +1,83 @@
+// 1. User-facing health: traffic and 5xx rate per minute (frontend nginx logs)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1h) and ContainerAppName_s == "meteo-frontend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) == "request completed"
+| summarize requests = count(), errors_5xx = countif(toint(e.status) >= 500) by bin(TimeGenerated, 1m)
+| extend error_rate_pct = round(100.0 * errors_5xx / requests, 2)
+| render timechart
+
+
+// 2. Latency per route (backend): median, p95, p99
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1h) and ContainerAppName_s == "meteo-backend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) == "request completed" and isnotempty(tostring(e.route))
+| summarize requests = count(),
+            p50_ms = percentile(todouble(e.duration_ms), 50),
+            p95_ms = percentile(todouble(e.duration_ms), 95),
+            p99_ms = percentile(todouble(e.duration_ms), 99)
+    by route = tostring(e.route)
+| order by requests desc
+
+
+// 3. Errors per service, status and route (how load test no. 1 was diagnosed)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(4h)
+| extend e = parse_json(Log_s)
+| where toint(e.status) >= 400 or tostring(e.level) in ("WARNING", "ERROR")
+| summarize count = count() by app = ContainerAppName_s, status = toint(e.status), message = tostring(e.message),
+    error = tostring(e.error), path = tostring(e.path)
+| order by count desc
+
+
+// 4. Follow ONE request end to end: nginx -> Flask -> Open-Meteo calls
+// Use the "référence" shown in UI error messages (first 8 characters of the request id),
+// or the full X-Request-ID response header (browser dev tools, Network tab).
+let rid = "PASTE-THE-REFERENCE-HERE";
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1d) and Log_s contains rid
+| extend e = parse_json(Log_s)
+| project TimeGenerated, service = ContainerAppName_s, replica = ContainerGroupName_s,
+    message = tostring(e.message), status = toint(e.status), duration_ms = todouble(e.duration_ms),
+    dependency = tostring(e.dependency), outcome = tostring(e.outcome)
+| order by TimeGenerated asc
+
+
+// 5. External dependency: Open-Meteo calls per API and outcome (success, timeout, circuit open...)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(4h) and ContainerAppName_s == "meteo-backend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) in ("dependency call", "dependency call skipped")
+| summarize calls = count(), p95_ms = percentile(todouble(e.duration_ms), 95)
+    by api = tostring(e.endpoint), outcome = tostring(e.outcome)
+| order by calls desc
+
+
+// 6. Resilience in action: circuit opened, values served in degraded mode, database down
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(4h) and ContainerAppName_s == "meteo-backend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) in ("circuit breaker opened", "serving stale weather", "serving stale suggestions",
+    "database unavailable")
+| summarize count = count() by bin(TimeGenerated, 1m), event = tostring(e.message)
+| render columnchart
+
+
+// 7. Load spread across replicas (scaling)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1h) and ContainerAppName_s == "meteo-backend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) == "request completed"
+| summarize requests = count() by bin(TimeGenerated, 30s), replica = ContainerGroupName_s
+| render timechart
+
+
+// 8. Deployments and startups: migrations applied and versions started, per revision
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(1d) and ContainerAppName_s == "meteo-backend"
+| extend e = parse_json(Log_s)
+| where tostring(e.message) in ("application started", "migration applied", "migrations up to date")
+| project TimeGenerated, revision = RevisionName_s, replica = ContainerGroupName_s,
+    message = tostring(e.message), detail = tostring(e.version)  // app version or migration name
+| order by TimeGenerated desc
