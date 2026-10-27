@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent)) 
+sys.path.insert(0, str(Path(__file__).parent))
 
-from fakes import VISITOR, FakeRepository, FakeWeatherClient  
+from fakes import VISITOR, FakeRepository, FakeWeatherClient
 
-from app import create_app  
-from app.config import Settings  
+from app import create_app
+from app.config import Settings
 
 
 @pytest.fixture
