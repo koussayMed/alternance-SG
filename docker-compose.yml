@@ -1,4 +1,5 @@
 name: sre-meteo
+ 
 services:
   db:
     image: postgres:16-alpine
@@ -9,14 +10,14 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${DB_HOST_PORT:-55432}:5432" 
+      - "127.0.0.1:${DB_HOST_PORT:-55432}:5432"  # localhost only: integration tests and psql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
-
+ 
   backend:
     build:
       context: ./backend
@@ -27,61 +28,65 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql://${POSTGRES_USER:-meteo}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-meteo}
       WEATHER_CACHE_TTL_S: ${WEATHER_CACHE_TTL_S:-600}
+      # Simulate a weather API outage with FORECAST_API_URL=https://invalid.example
       FORECAST_API_URL: ${FORECAST_API_URL:-https://api.open-meteo.com/v1/forecast}
+      # Each process pushes its metrics to the Pushgateway (see backend/app/metrics.py)
       METRICS_PUSHGATEWAY_URL: http://pushgateway:9091
     depends_on:
       db:
         condition: service_healthy
+    # No published port: only the frontend can reach the backend (as in production)
     restart: unless-stopped
-
+ 
   frontend:
     build: ./frontend
     environment:
       BACKEND_URL: http://backend:8000
     ports:
-      - "8080:8080"
+      - "${FRONTEND_HOST_PORT:-8080}:8080" # change it in .env if 8080 is taken (e.g. Jenkins)
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
-
-  #  Observability
+ 
+  # --- Observability ----------------------------------------------------------------------------
   pushgateway:
     image: prom/pushgateway:v1.11.4
     ports:
-      - "127.0.0.1:9091:9091" 
+      - "127.0.0.1:9091:9091" # localhost only: inspect pushed metrics
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9091/-/healthy"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
-
+ 
   prometheus:
     build: ./observability/prometheus
     environment:
       PUSHGATEWAY_TARGET: pushgateway:9091
       PUSHGATEWAY_SCHEME: http
-      CADVISOR_TARGET: cadvisor:8080 
+      CADVISOR_TARGET: cadvisor:8080 # local only: no host access on Azure Container Apps
     volumes:
       - prometheus-data:/prometheus
     ports:
-      - "127.0.0.1:9090:9090" 
+      - "127.0.0.1:9090:9090" # Prometheus UI: http://localhost:9090
     depends_on:
       pushgateway:
         condition: service_healthy
     restart: unless-stopped
-
-
+ 
+  # Container metrics (CPU, memory, network) read from the Docker host. Not possible on Container Apps
+  # (managed service, no host access): there, Grafana reads Azure Monitor metrics instead.
   cadvisor:
     image: ghcr.io/google/cadvisor:v0.60.6
     command:
       - --docker_only=true
       - --housekeeping_interval=15s
       - --store_container_labels=false
-      - --whitelisted_container_labels=com.docker.compose.service 
+      - --whitelisted_container_labels=com.docker.compose.service # adds the compose service label
       - --enable_metrics=cpu,memory,network
-    privileged: true 
+    privileged: true # required to read the host cgroups (official docs)
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:
@@ -90,21 +95,22 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     ports:
-      - "127.0.0.1:8081:8080" 
+      - "127.0.0.1:8081:8080" # cAdvisor UI: http://localhost:8081 (8080 is the frontend)
     restart: unless-stopped
-
+ 
   grafana:
     build: ./observability/grafana
     environment:
       PROMETHEUS_URL: http://prometheus:9090
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
     ports:
-      - "127.0.0.1:3000:3000" 
+      - "127.0.0.1:3000:3000" # Grafana UI: http://localhost:3000 (read-only without login)
     depends_on:
       prometheus:
         condition: service_healthy
     restart: unless-stopped
-
+ 
 volumes:
   db-data:
   prometheus-data:
+ 
