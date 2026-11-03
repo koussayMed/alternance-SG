@@ -2,7 +2,7 @@ name: sre-meteo
  
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-meteo}
       POSTGRES_USER: ${POSTGRES_USER:-meteo}
