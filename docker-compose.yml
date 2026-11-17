@@ -79,7 +79,7 @@ services:
   # Container metrics (CPU, memory, network) read from the Docker host. Not possible on Container Apps
   # (managed service, no host access): there, Grafana reads Azure Monitor metrics instead.
   cadvisor:
-    image: ghcr.io/google/cadvisor:v0.60.6
+    image: ghcr.io/google/cadvisor:v0.61.0
     command:
       - --docker_only=true
       - --housekeeping_interval=15s
