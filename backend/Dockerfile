@@ -1,5 +1,5 @@
 # --- Stage 1: install dependencies in a virtualenv (pyhton Venv)
-FROM python:3.14-slim AS build
+FROM python:3.15-slim AS build
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
@@ -8,7 +8,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # --- Stage 2: minimal runtime image, no build tools
-FROM python:3.14-slim
+FROM python:3.15-slim
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
